@@ -27,6 +27,92 @@ describe('PeoplePayloadNormalizerService', () => {
     expect(result.timestamp.toISOString()).toBe('2026-06-24T15:30:00.000Z');
   });
 
+  it('suma una entrada de line_trigger_data', () => {
+    const result = normalizer.normalize({
+      line_trigger_data: [{ in: 1, out: 0 }]
+    });
+
+    expect(result).toMatchObject({ entradas: 1, salidas: 0, total: 1 });
+  });
+
+  it('suma una salida de line_trigger_data', () => {
+    const result = normalizer.normalize({
+      line_trigger_data: [{ in: 0, out: 1 }]
+    });
+
+    expect(result).toMatchObject({ entradas: 0, salidas: 1, total: -1 });
+  });
+
+  it('no cuenta group_in ni group_out como personas', () => {
+    const result = normalizer.normalize({
+      line_trigger_data: [{ in: 0, out: 0, group_in: 1, group_out: 2 }]
+    });
+
+    expect(result).toMatchObject({ entradas: 0, salidas: 0, total: 0 });
+  });
+
+  it('suma entradas y salidas de múltiples líneas', () => {
+    const result = normalizer.normalize({
+      line_trigger_data: [
+        { in: 1, out: 0 },
+        { in: 2, out: 1 }
+      ]
+    });
+
+    expect(result).toMatchObject({ entradas: 3, salidas: 1, total: 2 });
+  });
+
+  it('prioriza device_info.device_sn sobre device_name', () => {
+    const result = normalizer.normalize({
+      device_info: {
+        device_sn: '6767E42214440033',
+        device_name: 'People Counter'
+      },
+      line_trigger_data: [{ in: 1, out: 0 }]
+    });
+
+    expect(result.device_id).toBe('6767E42214440033');
+  });
+
+  it('mantiene compatibilidad con data.people_counter', () => {
+    const result = normalizer.normalize({
+      data: {
+        people_counter: {
+          in: 5,
+          out: 2
+        }
+      }
+    });
+
+    expect(result).toMatchObject({ entradas: 5, salidas: 2, total: 3 });
+  });
+
+  it('preserva completo el payload real de Milesight y su timestamp', () => {
+    const payload = {
+      time_info: { time: '2026-09-23T11:52:25-06:00' },
+      device_info: {
+        device_sn: '6767E42214440033',
+        device_name: 'People Counter'
+      },
+      line_trigger_data: [
+        {
+          in: 1,
+          out: 0,
+          group_in: 0,
+          staff_in: 0,
+          children_in: 0,
+          line_name: 'Line1',
+          line_uuid: 'ef4e5cd0-69c9-48a7-99f8-63f1553fd13c'
+        }
+      ]
+    };
+
+    const result = normalizer.normalize(payload);
+
+    expect(result.timestamp.toISOString()).toBe('2026-09-23T17:52:25.000Z');
+    expect(result.raw_payload).toBe(payload);
+  });
+
   it('normaliza payload simple', () => {
     const result = normalizer.normalize({
       deviceName: 'VS135-P',

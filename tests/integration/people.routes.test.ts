@@ -77,6 +77,36 @@ describe('people routes', () => {
     expect(response.body.data.raw_payload).toBeUndefined();
   });
 
+  it('normaliza y conserva un evento real del Milesight VS135-P', async () => {
+    const app = createApp(new MemoryPeopleRepository());
+    const payload = {
+      time_info: { time: '2026-09-23T11:52:25-06:00' },
+      device_info: {
+        device_sn: '6767E42214440033',
+        device_name: 'People Counter'
+      },
+      line_trigger_data: [
+        { in: 1, out: 0, group_in: 1, line_name: 'Line1' },
+        { in: 2, out: 1, children_out: 4, staff_out: 3 }
+      ]
+    };
+
+    const createResponse = await request(app).post('/api/people').send(payload);
+
+    expect(createResponse.status).toBe(200);
+    expect(createResponse.body.data).toMatchObject({
+      device_id: '6767E42214440033',
+      timestamp: '2026-09-23T17:52:25.000Z',
+      entradas: 3,
+      salidas: 1,
+      total: 2
+    });
+
+    const findResponse = await request(app).get('/api/people/1');
+
+    expect(findResponse.body.data.raw_payload).toEqual(payload);
+  });
+
   it('marca como duplicado el mismo evento reenviado', async () => {
     const repository = new MemoryPeopleRepository();
     const app = createApp(repository);

@@ -106,7 +106,10 @@ export class PeoplePayloadNormalizerService {
   }
 
   private normalizeDeviceId(payload: JsonObject, warnings: string[]): string {
-    const match = findDeepAlias(payload, DEVICE_ALIASES, MAX_DEPTH);
+    const deviceSerialNumber = getAtNormalizedPath(payload, ['device_info', 'device_sn']);
+    const match = isValidDeviceIdentifier(deviceSerialNumber)
+      ? { field: 'device_sn', value: deviceSerialNumber }
+      : findDeepAlias(payload, DEVICE_ALIASES, MAX_DEPTH);
 
     if (match === null) {
       warnings.push('No se encontró el identificador del dispositivo; se utilizó unknown');
@@ -171,6 +174,12 @@ export class PeoplePayloadNormalizerService {
   }
 
   private findCounterPair(payload: JsonObject): CounterPair {
+    const lineTriggerData = getAtNormalizedPath(payload, ['line_trigger_data']);
+
+    if (Array.isArray(lineTriggerData)) {
+      return sumLineTriggerCounters(lineTriggerData);
+    }
+
     for (const path of PRIORITIZED_COUNTER_PATHS) {
       const container = path.length === 0 ? payload : getAtNormalizedPath(payload, path);
 
@@ -193,6 +202,54 @@ export class PeoplePayloadNormalizerService {
 
     return {};
   }
+}
+
+function sumLineTriggerCounters(items: unknown[]): CounterPair {
+  let entradas = 0;
+  let salidas = 0;
+
+  for (const [index, item] of items.entries()) {
+    if (!isPlainObject(item)) {
+      continue;
+    }
+
+    const entrada = findDirectAlias(item, ['in']);
+    const salida = findDirectAlias(item, ['out']);
+
+    entradas += parseLineTriggerCounter(entrada, index, 'entradas');
+    salidas += parseLineTriggerCounter(salida, index, 'salidas');
+  }
+
+  return {
+    entradas: { field: 'line_trigger_data[].in', value: entradas },
+    salidas: { field: 'line_trigger_data[].out', value: salidas }
+  };
+}
+
+function parseLineTriggerCounter(
+  match: AliasMatch | undefined,
+  index: number,
+  label: 'entradas' | 'salidas'
+): number {
+  if (match === undefined) {
+    return 0;
+  }
+
+  const parsedValue = parseCounter(match.value);
+
+  if (parsedValue !== null) {
+    return parsedValue;
+  }
+
+  const message =
+    label === 'entradas'
+      ? 'El contador de entradas debe ser un número entero mayor o igual a cero'
+      : 'El contador de salidas debe ser un número entero mayor o igual a cero';
+
+  throw new AppError(400, 'INVALID_COUNTER', message, {
+    field: `line_trigger_data[${index}].${match.field}`,
+    value: match.value
+  });
 }
 
 function findDirectCounterPair(container: JsonObject): CounterPair {
@@ -376,6 +433,13 @@ function parseCounter(value: unknown): number | null {
   }
 
   return null;
+}
+
+function isValidDeviceIdentifier(value: unknown): boolean {
+  return (
+    (typeof value === 'string' && value.trim().length > 0) ||
+    (typeof value === 'number' && Number.isFinite(value))
+  );
 }
 
 function normalizeKey(key: string): string {
